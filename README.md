@@ -12,6 +12,18 @@
 🎉 **Version 1.0.0** - Production-ready with comprehensive testing and 124 passing tests
 📦 **NPM Package** - Install with `npm install -g claude-config-composer` or use `npx`
 
+## 🌟 New: Universal Setup
+
+**Want these configs available in ALL your projects?**
+
+📖 **[Read the Universal Setup Guide →](SETUP_UNIVERSAL.md)**
+
+Choose from multiple approaches:
+- 🚀 **NPM Global** - One command, works everywhere
+- 🔧 **Shell Helper** - Custom commands for power users
+- 📦 **Project Templates** - Instant project scaffolding
+- 🛠️ **Local Development** - Full customization control
+
 ## 🚨 **Breaking Changes for Existing Users**
 
 **This release fundamentally changes how configs are organized and used.**

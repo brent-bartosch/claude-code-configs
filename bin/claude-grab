@@ -1,0 +1,197 @@
+#!/bin/bash
+# Universal Claude Code Config Manager
+# Makes it easy to grab configs from anywhere
+
+CONFIGS_DIR="${CLAUDE_CONFIGS_HOME:-$HOME/claude-code-configs}"
+COMPOSER="$CONFIGS_DIR/claude-config-composer/dist/cli.js"
+
+show_usage() {
+  cat <<EOF
+Claude Code Config Manager
+
+Usage: claude-grab <command> [args]
+
+Commands:
+  list              List all available configurations
+  compose <configs> Merge multiple configs into current directory
+  copy <path>       Copy single config to current directory
+  update            Update the configs repository
+  templates         List available project templates
+  new <template>    Create new project from template
+
+Examples:
+  claude-grab list
+  claude-grab compose nextjs-15 shadcn tailwindcss
+  claude-grab copy frameworks/nextjs-15
+  claude-grab templates
+  claude-grab new full-stack my-app
+
+Configuration Path: $CONFIGS_DIR
+EOF
+}
+
+case "$1" in
+  list)
+    echo "📦 Available Claude Code Configurations"
+    echo "========================================"
+    echo ""
+    echo "🎯 Frameworks:"
+    ls -1 "$CONFIGS_DIR/configurations/frameworks" 2>/dev/null | sed 's/^/  - /'
+    echo ""
+    echo "🎨 UI Libraries:"
+    ls -1 "$CONFIGS_DIR/configurations/ui" 2>/dev/null | sed 's/^/  - /'
+    echo ""
+    echo "💾 Databases:"
+    ls -1 "$CONFIGS_DIR/configurations/databases" 2>/dev/null | sed 's/^/  - /'
+    echo ""
+    echo "🛠️  Development Tools:"
+    ls -1 "$CONFIGS_DIR/configurations/tooling" 2>/dev/null | sed 's/^/  - /'
+    echo ""
+    echo "🔌 MCP Servers:"
+    ls -1 "$CONFIGS_DIR/configurations/mcp-servers" 2>/dev/null | sed 's/^/  - /'
+    echo ""
+    echo "Use 'claude-grab compose <names>' to combine multiple configs"
+    ;;
+
+  compose)
+    shift
+    if [ ! -f "$COMPOSER" ]; then
+      echo "⚠️  Composer not built. Building now..."
+      cd "$CONFIGS_DIR/claude-config-composer"
+      npm install && npm run build
+      cd - > /dev/null
+    fi
+    node "$COMPOSER" "$@"
+    ;;
+
+  copy)
+    if [ -z "$2" ]; then
+      echo "❌ Error: Config path required"
+      echo "Example: claude-grab copy frameworks/nextjs-15"
+      echo ""
+      echo "Run 'claude-grab list' to see available configs"
+      exit 1
+    fi
+
+    SOURCE="$CONFIGS_DIR/configurations/$2"
+    if [ ! -d "$SOURCE" ]; then
+      echo "❌ Error: Configuration not found at $SOURCE"
+      echo ""
+      echo "Available paths:"
+      find "$CONFIGS_DIR/configurations" -mindepth 2 -maxdepth 2 -type d | sed "s|$CONFIGS_DIR/configurations/||" | sed 's/^/  - /'
+      exit 1
+    fi
+
+    # Backup existing files if they exist
+    if [ -d ".claude" ]; then
+      echo "⚠️  Backing up existing .claude directory..."
+      mv .claude ".claude.backup.$(date +%Y%m%d_%H%M%S)"
+    fi
+
+    # Copy files
+    cp -r "$SOURCE/.claude" . 2>/dev/null && echo "✅ Copied .claude directory" || echo "⚠️  No .claude directory found"
+    cp "$SOURCE/CLAUDE.md" . 2>/dev/null && echo "✅ Copied CLAUDE.md" || echo "⚠️  No CLAUDE.md found"
+    cp "$SOURCE/README.md" "./CLAUDE_README.md" 2>/dev/null && echo "✅ Copied README.md as CLAUDE_README.md" || echo "⚠️  No README.md found"
+
+    echo ""
+    echo "✅ Configuration copied successfully!"
+    echo "📝 Review CLAUDE.md and CLAUDE_README.md for usage instructions"
+    ;;
+
+  update)
+    echo "📦 Updating claude-code-configs repository..."
+    cd "$CONFIGS_DIR"
+
+    # Save current branch
+    CURRENT_BRANCH=$(git branch --show-current)
+
+    # Stash local changes if any
+    if ! git diff-index --quiet HEAD --; then
+      echo "💾 Stashing local changes..."
+      git stash
+      STASHED=true
+    fi
+
+    # Pull latest
+    git pull origin main
+
+    # Restore stash if we saved one
+    if [ "$STASHED" = true ]; then
+      echo "📦 Restoring local changes..."
+      git stash pop
+    fi
+
+    # Rebuild composer
+    echo "🔨 Rebuilding composer..."
+    cd claude-config-composer
+    npm install && npm run build
+
+    echo ""
+    echo "✅ Update complete!"
+    echo "📊 Latest commit: $(git log -1 --oneline)"
+    ;;
+
+  templates)
+    echo "📋 Available Project Templates"
+    echo "=============================="
+    echo ""
+
+    if [ ! -d "$CONFIGS_DIR/templates" ]; then
+      echo "⚠️  No templates directory found"
+      exit 1
+    fi
+
+    for template in "$CONFIGS_DIR/templates"/*.sh; do
+      if [ -f "$template" ]; then
+        basename "$template" .sh | sed 's/^/  - /'
+        # Extract description from template file
+        grep -m1 "^# " "$template" | head -n 2 | tail -n 1 | sed 's/^# /    /'
+      fi
+    done
+
+    echo ""
+    echo "Usage: claude-grab new <template-name> [project-name]"
+    ;;
+
+  new)
+    if [ -z "$2" ]; then
+      echo "❌ Error: Template name required"
+      echo ""
+      echo "Available templates:"
+      ls -1 "$CONFIGS_DIR/templates"/*.sh 2>/dev/null | xargs -n1 basename | sed 's/.sh$//' | sed 's/^/  - /'
+      echo ""
+      echo "Usage: claude-grab new <template-name> [project-name]"
+      exit 1
+    fi
+
+    TEMPLATE="$CONFIGS_DIR/templates/$2-template.sh"
+    if [ ! -f "$TEMPLATE" ]; then
+      # Try without -template suffix
+      TEMPLATE="$CONFIGS_DIR/templates/$2.sh"
+      if [ ! -f "$TEMPLATE" ]; then
+        echo "❌ Error: Template '$2' not found"
+        echo ""
+        echo "Available templates:"
+        ls -1 "$CONFIGS_DIR/templates"/*.sh 2>/dev/null | xargs -n1 basename | sed 's/.sh$//' | sed 's/-template$//' | sed 's/^/  - /'
+        exit 1
+      fi
+    fi
+
+    # Make executable if not already
+    chmod +x "$TEMPLATE"
+
+    # Run template with project name (default to "my-project")
+    PROJECT_NAME="${3:-my-project}"
+    echo "🚀 Creating project '$PROJECT_NAME' from template '$2'..."
+    bash "$TEMPLATE" "$PROJECT_NAME"
+    ;;
+
+  help|--help|-h)
+    show_usage
+    ;;
+
+  *)
+    show_usage
+    exit 1
+    ;;
+esac
